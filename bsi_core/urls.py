@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include  # <-- Agregamos 'include' aquí
 from inventario import views
+from inventario.views import registrar_salida
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -18,4 +19,5 @@ urlpatterns = [
     # --- RUTAS AJAX PARA MENÚS EN CASCADA ---
     path('ajax/cargar-cajas/', views.cargar_cajas, name='ajax_cargar_cajas'),
     path('ajax/cargar-huecos/', views.cargar_huecos, name='ajax_cargar_huecos'),
+    path('salida-muestra/', registrar_salida, name='registrar_salida'),
 ]

@@ -2,6 +2,7 @@ from django.db import models
 import uuid
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from django.contrib.auth.models import User # <- IMPORTACIÓN NECESARIA PARA LA AUDITORÍA
 
 class Estudio(models.Model):
     nombre_estudio = models.CharField(max_length=100, help_text="Ej: DAVOS")
@@ -20,7 +21,6 @@ class Freezer(models.Model):
         return f"{self.nombre} ({self.temperatura})"
 
 class Rack(models.Model):
-    # ¡AQUÍ ESTÁ EL CAMBIO CLAVE! Ahora el Rack pertenece a un Freezer
     freezer = models.ForeignKey(Freezer, on_delete=models.CASCADE, related_name="racks", verbose_name=_("Freezer Asignado"))    
     nombre = models.CharField(max_length=50, help_text="Ej: Rack A1")
     filas_alto = models.IntegerField(help_text="Cantidad de cajas hacia arriba (ej: 5)")
@@ -34,11 +34,9 @@ class Caja(models.Model):
     codigo_caja = models.CharField(max_length=50, blank=True)
     nombre = models.CharField(max_length=50)
     
-    # --- UBICACIÓN DE LA CAJA DENTRO DEL RACK ---
     posicion_fila_en_rack = models.IntegerField()
     posicion_columna_en_rack = models.IntegerField()
     
-    # --- TAMAÑO INTERNO DE LA CAJA (Huecos para tubos) ---
     filas_de_caja = models.IntegerField(default=9, help_text="Ej: 9 para cajas estándar, 10 para cajas de 100")
     columnas_de_caja = models.IntegerField(default=9, help_text="Ej: 9, 10, etc.")
 
@@ -50,12 +48,8 @@ class Caja(models.Model):
             posiciones_a_crear = []
             letras = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
             
-            # CORRECCIÓN: Usamos self.filas
             for f in range(self.filas_de_caja):
-                # Usamos letras para las filas (A, B, C...)
                 letra_fila = letras[f] if f < len(letras) else str(f)
-                
-                # CORRECCIÓN: Usamos self.columnas
                 for c in range(1, self.columnas_de_caja + 1):
                     nueva_posicion = PosicionTubo(
                         caja=self,
@@ -70,7 +64,6 @@ class Caja(models.Model):
         return f"Caja {nombre_mostrar} ({self.columnas_de_caja}x{self.filas_de_caja}) - {self.rack.nombre}"
     
 class RegistroIngreso(models.Model):
-    # 1. El código manual que ingresa la tecnóloga
     codigo_lote = models.CharField(
         verbose_name=_("Código de Lote (Manual)"), 
         max_length=100, 
@@ -78,23 +71,20 @@ class RegistroIngreso(models.Model):
         help_text=_("Ej: LOTE-DAVOS-001")
     )
     
-    # 2. El registro automático del sistema (no se podrá editar)
     registro_interno = models.CharField(
         verbose_name=_("Registro Interno (Sistema)"), 
         max_length=100, 
         unique=True, 
         blank=True, 
-        editable=False # Esto evita que alguien lo modifique en el panel web
+        editable=False
     )
     
-    # 3. Fecha exacta de cuándo se creó el lote
     fecha_ingreso = models.DateTimeField(
         verbose_name=_("Fecha de Ingreso"), 
         auto_now_add=True
     )
 
     def save(self, *args, **kwargs):
-        # Generación automática del ID interno del sistema
         if not self.registro_interno:
             fecha = timezone.now().strftime("%Y%m%d")
             codigo_unico = str(uuid.uuid4()).split('-')[0].upper()
@@ -105,38 +95,31 @@ class RegistroIngreso(models.Model):
         return f"{self.codigo_lote} (Ref: {self.registro_interno})"
 
 class MuestraBiologica(models.Model):
-    # --- IDENTIFICACIÓN BÁSICA ---
     bsi_id = models.CharField(max_length=50, primary_key=True, unique=True)
     sample_id = models.CharField(max_length=50)
     sequence = models.IntegerField(default=1)
     
-    # --- ORGANIZACIÓN ---
     study = models.ForeignKey(Estudio, on_delete=models.SET_NULL, null=True, blank=True)    
     project = models.CharField(max_length=100, null=True, blank=True, help_text="Proyecto específico (Ej: Sub-proyecto de DAVOS)")
     
-    # --- TRAZABILIDAD CLÍNICA Y ALÍCUOTAS ---
     subject_id = models.CharField(max_length=100, null=True, blank=True, help_text="ID anonimizado del paciente/participante")
     parent_id = models.CharField(max_length=50, null=True, blank=True, help_text="BSI ID de la muestra original (si es alícuota)")
 
-    # --- CARACTERÍSTICAS DEL MATERIAL ---
     material_type = models.CharField(max_length=50, help_text="Ej: Filtro pasivo, Suero")
     vial_type = models.CharField(max_length=50)
     vial_status = models.CharField(max_length=50, default="Disponible")
     
-    # --- VIABILIDAD Y CANTIDAD ---
     volume = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, help_text="Volumen de la muestra (ej: 500.000)")
     volume_unit = models.CharField(max_length=20, null=True, blank=True, help_text="Unidad de medida (ej: µL, mL)")
     thaws = models.IntegerField(default=0, help_text="Número de ciclos de descongelamiento")
     hemolyzed = models.BooleanField(default=False, verbose_name="Hemolizada")
     vial_warnings = models.TextField(null=True, blank=True, help_text="Advertencias o notas sobre la calidad del vial")
 
-    # --- TIEMPOS Y FECHAS ---
     date_drawn = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Extracción")
     date_received = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Recepción")
     date_frozen = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Congelación")
     date_entered = models.DateTimeField(auto_now_add=True)
     
-    # --- RELACIONES DEL SISTEMA (LIMS) ---
     entry_batch = models.ForeignKey(
         'RegistroIngreso', 
         on_delete=models.PROTECT, 
@@ -164,3 +147,25 @@ class PosicionTubo(models.Model):
     def __str__(self):
         nombre_caja = self.caja.codigo_caja if self.caja.codigo_caja else self.caja.nombre
         return f"Caja {nombre_caja} - Posición {self.row}{self.col}"
+
+# ▼▼▼ ESTE ES EL NUEVO MODELO QUE FALTABA PARA LA AUDITORÍA ▼▼▼
+class MovimientoMuestra(models.Model):
+    TIPOS_MOVIMIENTO = [
+        ('SALIDA', 'Salida de Freezer (Consumo/Envío)'),
+        ('RETORNO', 'Retorno a Freezer'),
+        ('REUBICACION', 'Reubicación Interna'),
+        ('AUDITORIA', 'Revisión de Auditoría (Inventario)'),
+    ]
+
+    muestra = models.ForeignKey(MuestraBiologica, on_delete=models.CASCADE, related_name='historial_movimientos')
+    tipo_movimiento = models.CharField(max_length=20, choices=TIPOS_MOVIMIENTO)
+    usuario = models.ForeignKey(User, on_delete=models.PROTECT, help_text="Usuario que registró el movimiento")
+    fecha_movimiento = models.DateTimeField(auto_now_add=True)
+    
+    motivo = models.TextField(help_text="Ej: Extracción de ADN, Envío a laboratorio externo, etc.")
+    destino = models.CharField(max_length=100, blank=True, null=True, help_text="Lugar o persona que recibe la muestra")
+    
+    ubicacion_previa = models.CharField(max_length=100, blank=True, null=True, help_text="Queda guardado como texto por si la caja original se borra")
+
+    def __str__(self):
+        return f"{self.muestra.bsi_id} - {self.tipo_movimiento} ({self.fecha_movimiento.strftime('%d/%m/%Y')})"

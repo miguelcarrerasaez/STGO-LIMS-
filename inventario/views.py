@@ -4,8 +4,10 @@ from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required # 1. Importamos el "guardia de seguridad"
 from django.contrib.admin.views.decorators import staff_member_required
 import csv
-from .models import MuestraBiologica, Rack, Caja, RegistroIngreso, Freezer, PosicionTubo
-from .forms import MuestraBiologicaForm, RegistroIngresoForm, CajaForm
+from .models import MuestraBiologica, Rack, Caja, RegistroIngreso, Freezer, PosicionTubo, MovimientoMuestra
+from .forms import MuestraBiologicaForm, RegistroIngresoForm, CajaForm, SalidaMuestraForm
+from django.contrib import messages
+
 
 # 2. Le ponemos el guardia a nuestra vista. 
 # Si no está logueado, lo mandamos a la pantalla de login del admin por ahora.
@@ -190,3 +192,48 @@ def cargar_huecos(request):
         huecos = PosicionTubo.objects.filter(caja_id=caja_id, muestra__isnull=True)
         
     return render(request, 'inventario/dropdown_opciones.html', {'opciones': huecos, 'tipo': 'hueco'})
+
+@login_required
+def registrar_salida(request):
+    if request.method == 'POST':
+        form = SalidaMuestraForm(request.POST)
+        if form.is_valid():
+            bsi_id = form.cleaned_data['bsi_id'].strip()
+            
+            try:
+                # 1. Buscamos la muestra exacta
+                muestra = MuestraBiologica.objects.get(bsi_id=bsi_id)
+                
+                # 2. Verificamos si la muestra ya fue sacada antes
+                if not muestra.ubicacion:
+                    messages.warning(request, f"La muestra {bsi_id} ya se encuentra fuera del freezer.")
+                else:
+                    # 3. Guardamos su ubicación actual como texto antes de borrarla
+                    ubicacion_anterior = str(muestra.ubicacion)
+                    
+                    # 4. Creamos el registro histórico (Audit Trail)
+                    movimiento = form.save(commit=False)
+                    movimiento.muestra = muestra
+                    movimiento.usuario = request.user  # Registra quién hizo el movimiento
+                    movimiento.ubicacion_previa = ubicacion_anterior
+                    movimiento.save()
+                    
+                    # 5. ¡MAGIA! Liberamos el hueco en la caja
+                    muestra.ubicacion = None
+                    muestra.vial_status = "Despachada/Consumida" # Actualizamos su estado
+                    muestra.save()
+                    
+                    messages.success(request, f"¡Éxito! Salida registrada. El hueco de la muestra {bsi_id} ahora está vacío y disponible.")
+                    return redirect('dashboard')
+                    
+            except MuestraBiologica.DoesNotExist:
+                messages.error(request, f"Error: No existe ninguna muestra registrada con el ID '{bsi_id}'.")
+    else:
+        # Por defecto, seleccionamos la opción 'SALIDA'
+        form = SalidaMuestraForm(initial={'tipo_movimiento': 'SALIDA'})
+
+    # Usamos tu formulario_base.html para no tener que crear un HTML nuevo
+    return render(request, 'inventario/formulario_base.html', {
+        'form': form, 
+        'titulo': '📤 Registrar Salida de Muestra'
+    })

@@ -1,5 +1,5 @@
 from django import forms
-from .models import MuestraBiologica, PosicionTubo, RegistroIngreso, Caja, Freezer
+from .models import MuestraBiologica, PosicionTubo, RegistroIngreso, Caja, Freezer, MovimientoMuestra
 
 class MuestraBiologicaForm(forms.ModelForm):
     class Meta:
@@ -94,3 +94,18 @@ class CajaForm(forms.ModelForm):
                 field.widget.attrs['class'] = 'form-select shadow-sm'
             else:
                 field.widget.attrs['class'] = 'form-control shadow-sm'
+
+class SalidaMuestraForm(forms.ModelForm):
+    # Campo extra para escanear el código de barras/QR
+    bsi_id = forms.CharField(
+        label="BSI ID de la Muestra", 
+        max_length=50, 
+        help_text="Escanea o escribe el código de la muestra"
+    )
+
+    class Meta:
+        model = MovimientoMuestra
+        fields = ['tipo_movimiento', 'motivo', 'destino']
+        widgets = {
+            'motivo': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Ej: Extracción de ADN para secuenciación...'}),
+        }

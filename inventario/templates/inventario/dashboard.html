@@ -36,8 +36,12 @@
                 ❄️ Mapa de Equipos
             </a>
             
-            <a href="{% url 'ingresar_muestra' %}" class="btn btn-primary shadow-sm">
+            <a href="{% url 'ingresar_muestra' %}" class="btn btn-primary shadow-sm me-2">
                 ➕ Nueva Muestra
+            </a>
+            
+            <a href="{% url 'registrar_salida' %}" class="btn btn-warning shadow-sm">
+                📤 Registrar Salida
             </a>
             
             {% if user.is_superuser %}
