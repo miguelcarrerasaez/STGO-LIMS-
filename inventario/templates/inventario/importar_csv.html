@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block content %}
+<div id="content-main">
+    <div class="module">
+        <h2>Sube el archivo de inventario exportado de BSI</h2>
+        <p>Asegúrate de que el archivo contenga las columnas: <strong>BSI ID, Sample ID, Freezer, Rack, Box, Row, Col</strong>.</p>
+        
+        <form method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div style="margin: 20px 0; padding: 20px; border: 2px dashed #ccc; background: #f9f9f9;">
+                <input type="file" name="archivo_csv" accept=".csv, .txt" required>
+            </div>
+            
+            <div class="submit-row">
+                <input type="submit" value="Comenzar Importación" class="default" name="_save">
+                <a href=".." class="button cancel-link">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

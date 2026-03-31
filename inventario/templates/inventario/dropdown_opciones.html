@@ -1,0 +1,9 @@
+{% if tipo == 'caja' %}
+    <option value="">2. Seleccione una Caja...</option>
+{% elif tipo == 'hueco' %}
+    <option value="">3. Seleccione un hueco libre...</option>
+{% endif %}
+
+{% for opcion in opciones %}
+    <option value="{{ opcion.id }}">{{ opcion }}</option>
+{% endfor %}

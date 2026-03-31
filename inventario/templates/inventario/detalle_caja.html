@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Caja {{ caja.codigo_caja }} | LIMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* La magia del mapa */
+        .caja-grid {
+            display: grid;            
+            gap: 8px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+        }
+        .hueco {
+            aspect-ratio: 1 / 1; /* Mantiene los cuadritos perfectos */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%; /* Los hace ver como tubos redondos desde arriba */
+            font-weight: bold;
+            font-size: 0.8rem;
+            color: white;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .hueco:hover {
+            transform: scale(1.1);
+        }
+        .vacio {
+            background-color: #198754; /* Verde Bootstrap */
+            border: 2px solid #146c43;
+        }
+        .ocupado {
+            background-color: #dc3545; /* Rojo Bootstrap */
+            border: 2px solid #b02a37;
+        }
+    </style>
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container">
+        <span class="navbar-brand mb-0 h1">🔬 Sistema LIMS - Biobanco</span>
+        
+        <div class="d-flex align-items-center">
+            <a href="{% url 'dashboard' %}" class="btn btn-outline-light btn-sm me-3">
+                🏠 Volver al Resumen
+            </a>
+            
+            <span class="text-light me-3 small">👤 {{ user.username }}</span>
+            
+            {% if user.is_superuser %}
+                <a href="/admin/" class="btn btn-outline-light btn-sm me-2">Ir al Panel Admin</a>
+            {% endif %}
+            
+            <form action="{% url 'logout' %}" method="post" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger btn-sm">Cerrar Sesión</button>
+            </form>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>📦 Caja: {{ caja.codigo_caja|default:caja.nombre }}</h2>
+        <a href="{% url 'mapa_freezers' %}" class="btn btn-secondary">Volver al Mapa de Equipos</a>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="caja-grid" style="grid-template-columns: repeat({{ caja.columnas_de_caja }}, 1fr);">
+                        {% for fila in cuadricula %}
+                            {% for espacio in fila %}
+                                {% if espacio.ocupado %}
+                                    <div class="hueco ocupado" title="Muestra: {{ espacio.muestra.sample_id }}">
+                                        {{ espacio.coordenada }}
+                                    </div>
+                                {% else %}
+                                    <div class="hueco vacio" title="Espacio Libre">
+                                        {{ espacio.coordenada }}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="card-footer text-center bg-white">
+                    <span class="badge bg-success me-2">Libre</span>
+                    <span class="badge bg-danger">Ocupado</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
