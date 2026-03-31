@@ -105,15 +105,38 @@ class RegistroIngreso(models.Model):
         return f"{self.codigo_lote} (Ref: {self.registro_interno})"
 
 class MuestraBiologica(models.Model):
+    # --- IDENTIFICACIÓN BÁSICA ---
     bsi_id = models.CharField(max_length=50, primary_key=True, unique=True)
     sample_id = models.CharField(max_length=50)
     sequence = models.IntegerField(default=1)
-    study = models.ForeignKey(Estudio, on_delete=models.SET_NULL, null=True)    
+    
+    # --- ORGANIZACIÓN ---
+    study = models.ForeignKey(Estudio, on_delete=models.SET_NULL, null=True, blank=True)    
+    project = models.CharField(max_length=100, null=True, blank=True, help_text="Proyecto específico (Ej: Sub-proyecto de DAVOS)")
+    
+    # --- TRAZABILIDAD CLÍNICA Y ALÍCUOTAS ---
+    subject_id = models.CharField(max_length=100, null=True, blank=True, help_text="ID anonimizado del paciente/participante")
+    parent_id = models.CharField(max_length=50, null=True, blank=True, help_text="BSI ID de la muestra original (si es alícuota)")
+
+    # --- CARACTERÍSTICAS DEL MATERIAL ---
     material_type = models.CharField(max_length=50, help_text="Ej: Filtro pasivo, Suero")
     vial_type = models.CharField(max_length=50)
     vial_status = models.CharField(max_length=50, default="Disponible")
-    # Reemplazamos el CharField por una relación ForeignKey
-    # PROTECT asegura que nadie pueda borrar un Lote si hay muestras asociadas a él
+    
+    # --- VIABILIDAD Y CANTIDAD ---
+    volume = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, help_text="Volumen de la muestra (ej: 500.000)")
+    volume_unit = models.CharField(max_length=20, null=True, blank=True, help_text="Unidad de medida (ej: µL, mL)")
+    thaws = models.IntegerField(default=0, help_text="Número de ciclos de descongelamiento")
+    hemolyzed = models.BooleanField(default=False, verbose_name="Hemolizada")
+    vial_warnings = models.TextField(null=True, blank=True, help_text="Advertencias o notas sobre la calidad del vial")
+
+    # --- TIEMPOS Y FECHAS ---
+    date_drawn = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Extracción")
+    date_received = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Recepción")
+    date_frozen = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de Congelación")
+    date_entered = models.DateTimeField(auto_now_add=True)
+    
+    # --- RELACIONES DEL SISTEMA (LIMS) ---
     entry_batch = models.ForeignKey(
         'RegistroIngreso', 
         on_delete=models.PROTECT, 
@@ -121,21 +144,18 @@ class MuestraBiologica(models.Model):
         null=True, 
         blank=True
     )
-
-    date_drawn = models.DateTimeField(null=True, blank=True)
-    date_received = models.DateTimeField(null=True, blank=True)
-    date_entered = models.DateTimeField(auto_now_add=True)
     ubicacion = models.OneToOneField(
         'PosicionTubo', 
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        related_name='muestra', # Mantiene la compatibilidad con nuestro mapa 9x9
+        related_name='muestra',
         verbose_name="Ubicación en Caja (Hueco)"
     )
+
     def __str__(self):
         return f"BSI: {self.bsi_id} | Sample: {self.sample_id}"
-
+    
 class PosicionTubo(models.Model):
     caja = models.ForeignKey(Caja, on_delete=models.CASCADE, related_name="posiciones")
     row = models.CharField(max_length=5, help_text="Fila (Ej: A, B, C)")
