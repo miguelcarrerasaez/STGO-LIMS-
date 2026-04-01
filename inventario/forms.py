@@ -1,5 +1,5 @@
 from django import forms
-from .models import MuestraBiologica, PosicionTubo, RegistroIngreso, Caja, Freezer, MovimientoMuestra
+from .models import MuestraBiologica, PosicionTubo, RegistroIngreso, Caja, Rack, Freezer, MovimientoMuestra
 
 class MuestraBiologicaForm(forms.ModelForm):
     class Meta:
@@ -109,3 +109,51 @@ class SalidaMuestraForm(forms.ModelForm):
         widgets = {
             'motivo': forms.Textarea(attrs={'rows': 3, 'placeholder': 'Ej: Extracción de ADN para secuenciación...'}),
         }
+
+class ExportarCSVForm(forms.Form):
+    OPCIONES_EXPORTACION = [
+        ('bsi_id', 'BSI ID'),
+        ('sample_id', 'Sample ID'),
+        ('project', 'Proyecto / Sub-estudio'),
+        ('subject_id', 'ID de Paciente (Subject ID)'),
+        ('material_type', 'Tipo de Material'),
+        ('vial_type', 'Tipo de Vial'),
+        ('vial_status', 'Estado de la Muestra'),
+        ('volume', 'Volumen'),
+        ('thaws', 'Ciclos de Descongelamiento'),
+        ('hemolyzed', 'Hemolizada (Sí/No)'),
+        ('date_drawn', 'Fecha de Extracción'),
+        ('date_received', 'Fecha de Recepción'),
+        ('ubicacion_fisica', 'Ubicación Física Completa (Freezer > Caja > Hueco)'),
+        ('entry_batch', 'Código del Lote de Ingreso'),
+    ]
+
+    columnas = forms.MultipleChoiceField(
+        choices=OPCIONES_EXPORTACION,
+        widget=forms.CheckboxSelectMultiple,
+        label="1. Selecciona las columnas a incluir:",
+        required=True,
+        initial=['bsi_id', 'sample_id', 'material_type', 'vial_status', 'ubicacion_fisica'] 
+    )
+
+    # 2. LOS NUEVOS FILTROS (Son opcionales)
+    freezer = forms.ModelChoiceField(
+        queryset=Freezer.objects.all(),
+        required=False,
+        empty_label="--- Todos los Equipos ---",
+        label="2. Filtrar por Equipo (Opcional)"
+    )
+    
+    rack = forms.ModelChoiceField(
+        queryset=Rack.objects.all(),
+        required=False,
+        empty_label="--- Todos los Racks ---",
+        label="3. Filtrar por Rack (Opcional)"
+    )
+    
+    caja = forms.ModelChoiceField(
+        queryset=Caja.objects.all(),
+        required=False,
+        empty_label="--- Todas las Cajas ---",
+        label="4. Filtrar por Caja Específica (Opcional)"
+    )

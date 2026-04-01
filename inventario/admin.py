@@ -6,7 +6,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.db import transaction
 from datetime import datetime
-from .models import Estudio, Freezer, Rack, Caja, MuestraBiologica, PosicionTubo, RegistroIngreso
+from .models import Estudio, Freezer, Rack, Caja, MuestraBiologica, PosicionTubo, RegistroIngreso, TipoMaterial, TipoVial
 
 # Agrega esta configuración visual
 @admin.register(RegistroIngreso)
@@ -96,6 +96,18 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
                             except ValueError:
                                 return None
 
+                        # --- PARSEO DE TABLAS MAESTRAS ---
+                        material_str = row.get('Material Type', '').strip()
+                        vial_str = row.get('Vial Type', '').strip()
+                        
+                        tipo_mat_obj = None
+                        if material_str:
+                            tipo_mat_obj, _ = TipoMaterial.objects.get_or_create(nombre=material_str)
+                            
+                        tipo_vial_obj = None
+                        if vial_str:
+                            tipo_vial_obj, _ = TipoVial.objects.get_or_create(nombre=vial_str)
+
                         # 2. CREAMOS O ACTUALIZAMOS LA MUESTRA
                         muestra, created = MuestraBiologica.objects.update_or_create(
                             bsi_id=bsi_id,
@@ -104,8 +116,11 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
                                 'project': row.get('Project', '').strip(),
                                 'subject_id': row.get('Subject ID', '').strip(),
                                 'parent_id': row.get('Parent ID', '').strip(),
-                                'material_type': row.get('Material Type', '').strip(),
-                                'vial_type': row.get('Vial Type', '').strip(),
+                                
+                                # AQUÍ USAMOS LOS NUEVOS OBJETOS DE LAS TABLAS MAESTRAS
+                                'material_type': tipo_mat_obj,
+                                'vial_type': tipo_vial_obj,
+                                
                                 'vial_status': row.get('Vial Status', 'Disponible').strip(),
                                 'volume': volumen,
                                 'volume_unit': row.get('Volume Unit', '').strip(),
@@ -115,7 +130,7 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
                                 'date_drawn': parse_bsi_date(row.get('Date Drawn', '')),
                                 'date_received': parse_bsi_date(row.get('Date Received', '')),
                                 'date_frozen': parse_bsi_date(row.get('Date Frozen', '')),
-                                'entry_batch': lote_migracion, # ¡Asignamos el lote!
+                                'entry_batch': lote_migracion, 
                             }
                         )
 
@@ -208,3 +223,5 @@ admin.site.register(Estudio)
 admin.site.register(Rack)
 admin.site.register(Caja)
 admin.site.register(Freezer)
+admin.site.register(TipoMaterial)
+admin.site.register(TipoVial)

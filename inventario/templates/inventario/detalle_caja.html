@@ -23,19 +23,29 @@
             font-weight: bold;
             font-size: 0.8rem;
             color: white;
-            cursor: pointer;
             transition: transform 0.2s;
         }
+        
+        /* Efecto al pasar el mouse o al arrastrar */
         .hueco:hover {
             transform: scale(1.1);
         }
+        
         .vacio {
             background-color: #198754; /* Verde Bootstrap */
             border: 2px solid #146c43;
+            /* Indicador visual de que puedes soltar algo aquí */
+            cursor: pointer; 
         }
+        
         .ocupado {
             background-color: #dc3545; /* Rojo Bootstrap */
             border: 2px solid #b02a37;
+            /* Indicador visual de que puedes agarrar este tubo */
+            cursor: grab; 
+        }
+        .ocupado:active {
+            cursor: grabbing; /* Cambia el cursor cuando lo estás sujetando */
         }
     </style>
 </head>
@@ -57,8 +67,7 @@
             {% endif %}
             
             <form action="{% url 'logout' %}" method="post" class="m-0">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-danger btn-sm">Cerrar Sesión</button>
+                {% csrf_token %} <button type="submit" class="btn btn-danger btn-sm">Cerrar Sesión</button>
             </form>
         </div>
     </div>
@@ -78,11 +87,19 @@
                         {% for fila in cuadricula %}
                             {% for espacio in fila %}
                                 {% if espacio.ocupado %}
-                                    <div class="hueco ocupado" title="Muestra: {{ espacio.muestra.sample_id }}">
+                                    <div class="hueco ocupado" 
+                                         title="Muestra BSI: {{ espacio.muestra.bsi_id }} | Sample ID: {{ espacio.muestra.sample_id }}"
+                                         draggable="true"
+                                         ondragstart="drag(event, '{{ espacio.muestra.bsi_id }}')"
+                                         id="tubo-{{ espacio.muestra.bsi_id }}">
                                         {{ espacio.coordenada }}
                                     </div>
                                 {% else %}
-                                    <div class="hueco vacio" title="Espacio Libre">
+                                    <div class="hueco vacio" 
+                                         title="Espacio Libre"
+                                         ondragover="allowDrop(event)"
+                                         ondrop="drop(event, '{{ espacio.coordenada }}', {{ caja.id }})"
+                                         id="celda-{{ espacio.coordenada }}">
                                         {{ espacio.coordenada }}
                                     </div>
                                 {% endif %}
@@ -91,13 +108,64 @@
                     </div>
                 </div>
                 <div class="card-footer text-center bg-white">
-                    <span class="badge bg-success me-2">Libre</span>
-                    <span class="badge bg-danger">Ocupado</span>
+                    <span class="badge bg-success me-2">Libre (Puedes soltar tubos aquí)</span>
+                    <span class="badge bg-danger">Ocupado (Arrastra para mover)</span>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    // 1. Permite que el hueco verde reciba el tubo
+    function allowDrop(ev) {
+        ev.preventDefault();
+    }
+
+    // 2. Al agarrar el tubo rojo, guardamos qué BSI ID estamos moviendo
+    function drag(ev, bsi_id) {
+        ev.dataTransfer.setData("bsi_id", bsi_id);
+    }
+
+    // 3. Al soltar el tubo en el hueco verde
+    function drop(ev, nueva_coordenada, caja_id) {
+        ev.preventDefault();
+        
+        // Verificamos por seguridad que no estemos soltando sobre otro tubo rojo
+        if (ev.target.classList.contains('ocupado')) {
+            alert("¡Cuidado! Esa posición ya está ocupada.");
+            return;
+        }
+
+        // Rescatamos el BSI ID y el Token de seguridad de Django
+        const bsi_id = ev.dataTransfer.getData("bsi_id");
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+        // Enviamos los datos silenciosamente al servidor
+        fetch('/api/mover-muestra/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({
+                bsi_id: bsi_id,
+                caja_id: caja_id,
+                nueva_coordenada: nueva_coordenada
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Si la base de datos se actualizó, recargamos la página para ver el cambio de colores
+                window.location.reload(); 
+            } else {
+                alert("Hubo un error al mover la muestra: " + data.error);
+            }
+        })
+        .catch(error => console.error('Error de conexión:', error));
+    }
+</script>
 
 </body>
 </html>

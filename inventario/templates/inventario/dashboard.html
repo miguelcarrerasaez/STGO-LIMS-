@@ -12,6 +12,11 @@
     <div class="container">
         <span class="navbar-brand mb-0 h1">🔬 Sistema LIMS - Biobanco</span>
         
+        <form class="d-flex mx-auto" style="max-width: 400px; width: 100%;" action="{% url 'buscar_muestra' %}" method="GET">
+            <input class="form-control me-2" type="search" name="q" placeholder="Buscar por BSI ID o Sample ID..." aria-label="Search" required>
+            <button class="btn btn-outline-info" type="submit">🔍</button>
+        </form>
+        
         <div class="d-flex align-items-center">
             <span class="text-light me-3 small">👤 {{ user.username }}</span>
             
@@ -24,7 +29,6 @@
                 <button type="submit" class="btn btn-danger btn-sm">Cerrar Sesión</button>
             </form>
         </div>
-        
     </div>
 </nav>
 
@@ -75,6 +79,46 @@
                     <h5 class="card-title">Cajas Generadas</h5>
                     <h2 class="display-4">{{ total_cajas }}</h2>
                 </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">🌡️ Capacidad de Equipos (Termómetros)</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% for freezer in freezers %}
+                <div class="col-md-6 mb-3">
+                    <div class="p-3 border rounded bg-light">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong>{{ freezer.nombre }}</strong>
+                            <span class="badge bg-dark">
+                                {{ freezer.posiciones_ocupadas }} / {{ freezer.capacidad_total }} tubos
+                            </span>
+                        </div>
+                        
+                        <div class="progress" style="height: 25px; font-size: 1rem;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated 
+                                {% if freezer.porcentaje_ocupacion >= 90 %}bg-danger
+                                {% elif freezer.porcentaje_ocupacion >= 75 %}bg-warning text-dark
+                                {% else %}bg-success{% endif %}" 
+                                role="progressbar" 
+                                style="width: {{ freezer.porcentaje_ocupacion }}%;" 
+                                aria-valuenow="{{ freezer.porcentaje_ocupacion }}" 
+                                aria-valuemin="0" 
+                                aria-valuemax="100">
+                                {{ freezer.porcentaje_ocupacion }}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12">
+                    <p class="text-muted text-center mb-0">Aún no hay equipos registrados en el sistema.</p>
+                </div>
+                {% endfor %}
             </div>
         </div>
     </div>

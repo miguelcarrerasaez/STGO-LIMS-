@@ -5,8 +5,13 @@ from django.contrib.auth.decorators import login_required # 1. Importamos el "gu
 from django.contrib.admin.views.decorators import staff_member_required
 import csv
 from .models import MuestraBiologica, Rack, Caja, RegistroIngreso, Freezer, PosicionTubo, MovimientoMuestra
-from .forms import MuestraBiologicaForm, RegistroIngresoForm, CajaForm, SalidaMuestraForm
+from .forms import MuestraBiologicaForm, RegistroIngresoForm, CajaForm, SalidaMuestraForm, ExportarCSVForm
 from django.contrib import messages
+from django.db.models import Q
+import json
+from django.http import JsonResponse
+from django.views.decorators.http import require_POST
+from .models import MovimientoMuestra # Para guardar el historial
 
 
 # 2. Le ponemos el guardia a nuestra vista. 
@@ -27,71 +32,108 @@ def ingresar_muestra(request):
 
 @login_required
 def dashboard(request):
-    # 1. Hacemos consultas a la base de datos
+    # Tus conteos actuales
     total_muestras = MuestraBiologica.objects.count()
     total_racks = Rack.objects.count()
     total_cajas = Caja.objects.count()
+    ultimos_ingresos = RegistroIngreso.objects.all().order_by('-fecha_ingreso')[:5]
     
-    # Obtenemos los últimos 5 lotes ingresados, ordenados por fecha descendente
-    ultimos_ingresos = RegistroIngreso.objects.order_by('-fecha_ingreso')[:5]
+    # NUEVO: Traemos todos los freezers
+    freezers = Freezer.objects.all()
 
-    # 2. Empaquetamos los datos en un "contexto" (un diccionario de Python)
-    context = {
+    return render(request, 'inventario/dashboard.html', {
         'total_muestras': total_muestras,
         'total_racks': total_racks,
         'total_cajas': total_cajas,
         'ultimos_ingresos': ultimos_ingresos,
-    }
-
-    # 3. Se lo enviamos al archivo HTML para que lo dibuje
-    return render(request, 'inventario/dashboard.html', context)
+        'freezers': freezers, # <-- No olvides agregar esto al contexto
+    })
 
 @staff_member_required
 def exportar_inventario_csv(request):
-    # 1. Le decimos al navegador: "Prepárate, te voy a enviar un archivo CSV, no una página web"
-    response = HttpResponse(content_type='text/csv')
-    
-    # 2. Forzamos la descarga y le ponemos un nombre al archivo
-    response['Content-Disposition'] = 'attachment; filename="reporte_muestras_lims.csv"'
+    if request.method == 'POST':
+        form = ExportarCSVForm(request.POST)
+        if form.is_valid():
+            columnas_seleccionadas = form.cleaned_data['columnas']
+            
+            # 1. Configurar la respuesta como un archivo descargable
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="reporte_personalizado_lims.csv"'
+            
+            # TRUCO PRO: Agregar BOM de UTF-8 para que Excel lea los tildes automáticamente
+            response.write('\ufeff'.encode('utf8'))
+            
+            # Usar punto y coma suele ser mejor para Excel en Latinoamérica/España
+            writer = csv.writer(response, delimiter=';') 
+            
+            # 2. Escribir la fila de Encabezados (traduciendo el nombre técnico al nombre legible)
+            nombres_legibles = dict(form.fields['columnas'].choices)
+            encabezados = [nombres_legibles[col] for col in columnas_seleccionadas]
+            writer.writerow(encabezados)
+            
+            # 3. Traer los datos optimizados de la BD
+            muestras = MuestraBiologica.objects.all().select_related(
+                'entry_batch', 
+                'ubicacion__caja__rack__freezer'
+            )
+            # --- LA MAGIA DE LOS FILTROS ---
+            # Leemos qué seleccionó el usuario en los desplegables
+            freezer_filtro = form.cleaned_data.get('freezer')
+            rack_filtro = form.cleaned_data.get('rack')
+            caja_filtro = form.cleaned_data.get('caja')
 
-    # 3. Creamos el "escritor" de CSV de Python, apuntándolo a nuestra respuesta
-    writer = csv.writer(response)
+            # Filtramos de lo más específico a lo más general.
+            # Si eligió una caja, filtramos por esa caja.
+            if caja_filtro:
+                muestras = muestras.filter(ubicacion__caja=caja_filtro)
+            # Si no eligió caja pero sí un rack, filtramos por todo el rack.
+            elif rack_filtro:
+                muestras = muestras.filter(ubicacion__caja__rack=rack_filtro)
+            # Si solo eligió el Freezer (ej: UFMAU05), filtramos por todo el freezer.
+            elif freezer_filtro:
+                muestras = muestras.filter(ubicacion__caja__rack__freezer=freezer_filtro)
+                
+            # 4. Escribir las filas de datos dinámicamente
+            for muestra in muestras:
+                fila = []
+                for col in columnas_seleccionadas:
+                    # Casos especiales que no son campos directos de texto:
+                    if col == 'ubicacion_fisica':
+                        if muestra.ubicacion:
+                            u = muestra.ubicacion
+                            val = f"{u.caja.rack.freezer.nombre} > {u.caja.rack.nombre} > {u.caja.nombre} > {u.row}{u.col}"
+                        else:
+                            val = "Sin ubicación física"
+                    
+                    elif col == 'entry_batch':
+                        val = muestra.entry_batch.codigo_lote if muestra.entry_batch else "Sin Lote"
+                    
+                    elif col == 'hemolyzed':
+                        val = "Sí" if muestra.hemolyzed else "No"
+                        
+                    elif col in ['date_drawn', 'date_received']:
+                        fecha = getattr(muestra, col)
+                        val = fecha.strftime("%Y-%m-%d %H:%M") if fecha else ""
+                        
+                    # Caso general (textos, números)
+                    else:
+                        val = getattr(muestra, col, "")
+                        if val is None: val = ""
+                        
+                    fila.append(val)
+                    
+                writer.writerow(fila)
+                
+            return response
+    else:
+        # Si entra por primera vez, le mostramos el formulario
+        form = ExportarCSVForm()
 
-    # 4. Escribimos la primera fila (Los encabezados de las columnas)
-    writer.writerow([
-        'BSI ID', 
-        'Sample ID', 
-        'Tipo de Material', 
-        'Estado', 
-        'Lote de Ingreso', 
-        'Código Interno (SYS)',
-        'Fecha de Registro'
-    ])
-
-    # 5. Traemos todas las muestras de la base de datos
-    # select_related optimiza la búsqueda para traer los datos del lote asociado súper rápido
-    muestras = MuestraBiologica.objects.all().select_related('entry_batch')
-
-    # 6. Recorremos las muestras una por una y escribimos las filas
-    for muestra in muestras:
-        # Si la muestra tiene un lote asignado, sacamos sus nombres, si no, lo dejamos en blanco
-        nombre_lote = muestra.entry_batch.codigo_lote if muestra.entry_batch else "Sin Lote"
-        codigo_sys = muestra.entry_batch.registro_interno if muestra.entry_batch else ""
-        
-        # Formateamos la fecha para que se vea bien en Excel
-        fecha = muestra.date_entered.strftime("%d/%m/%Y %H:%M") if muestra.date_entered else ""
-        
-        writer.writerow([
-            muestra.bsi_id,
-            muestra.sample_id,
-            muestra.material_type,
-            muestra.vial_status,
-            nombre_lote,
-            codigo_sys,
-            fecha
-        ])
-
-    return response
+    # Reutilizamos tu plantilla de formularios
+    return render(request, 'inventario/formulario_base.html', {
+        'form': form, 
+        'titulo': '📊 Exportar Reporte Personalizado'
+    })
 
 @login_required
 def mapa_freezers(request):
@@ -237,3 +279,72 @@ def registrar_salida(request):
         'form': form, 
         'titulo': '📤 Registrar Salida de Muestra'
     })
+
+@login_required
+def buscar_muestra(request):
+    # Obtenemos lo que el usuario escribió en la barra de búsqueda
+    query = request.GET.get('q', '').strip()
+    resultados = []
+
+    if query:
+        # Buscamos coincidencias en BSI ID o en Sample ID
+        # select_related hace que la base de datos traiga toda la ruta física súper rápido
+        resultados = MuestraBiologica.objects.filter(
+            Q(bsi_id__icontains=query) | Q(sample_id__icontains=query)
+        ).select_related('ubicacion__caja__rack__freezer')
+
+    return render(request, 'inventario/resultado_busqueda.html', {
+        'query': query,
+        'resultados': resultados
+    })
+
+@login_required
+@require_POST
+def mover_muestra_ajax(request):
+    try:
+        # 1. Leemos los datos que envía el navegador al soltar el tubo
+        data = json.loads(request.body)
+        bsi_id = data.get('bsi_id')
+        caja_id = data.get('caja_id')
+        nueva_coord = data.get('nueva_coordenada') # Ej: "B5"
+
+        if not all([bsi_id, caja_id, nueva_coord]):
+            return JsonResponse({'success': False, 'error': 'Datos incompletos'})
+
+        # 2. Separamos la letra del número (Ej: "B5" -> row="B", col=5)
+        import re
+        match = re.match(r"([a-zA-Z]+)(\d+)", nueva_coord)
+        if not match:
+            return JsonResponse({'success': False, 'error': 'Coordenada inválida'})
+        
+        row, col = match.groups()
+        row = row.upper()
+        col = int(col)
+
+        # 3. Buscamos los objetos en la base de datos
+        muestra = MuestraBiologica.objects.get(bsi_id=bsi_id)
+        nueva_posicion = PosicionTubo.objects.get(caja_id=caja_id, row=row, col=col)
+
+        # 4. Verificamos que el hueco destino esté realmente vacío
+        if hasattr(nueva_posicion, 'muestra') and nueva_posicion.muestra:
+            return JsonResponse({'success': False, 'error': 'El hueco de destino ya está ocupado'})
+
+        ubicacion_anterior = str(muestra.ubicacion)
+
+        # 5. ¡Actualizamos la posición!
+        muestra.ubicacion = nueva_posicion
+        muestra.save()
+
+        # 6. Dejamos el registro en la Auditoría (Trazabilidad perfecta)
+        MovimientoMuestra.objects.create(
+            muestra=muestra,
+            tipo_movimiento='REUBICACION',
+            usuario=request.user,
+            motivo=f'Reubicación interna mediante Drag & Drop a {nueva_coord}',
+            ubicacion_previa=ubicacion_anterior
+        )
+
+        return JsonResponse({'success': True})
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})

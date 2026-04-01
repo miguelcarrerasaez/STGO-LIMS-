@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include  # <-- Agregamos 'include' aquí
 from inventario import views
-from inventario.views import registrar_salida
+from inventario.views import registrar_salida, buscar_muestra, mover_muestra_ajax
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -20,4 +20,6 @@ urlpatterns = [
     path('ajax/cargar-cajas/', views.cargar_cajas, name='ajax_cargar_cajas'),
     path('ajax/cargar-huecos/', views.cargar_huecos, name='ajax_cargar_huecos'),
     path('salida-muestra/', registrar_salida, name='registrar_salida'),
+    path('buscar/', buscar_muestra, name='buscar_muestra'),
+    path('api/mover-muestra/', mover_muestra_ajax, name='mover_muestra_ajax'),
 ]

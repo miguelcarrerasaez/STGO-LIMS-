@@ -20,11 +20,42 @@ class Freezer(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.temperatura})"
 
+    # ▼▼▼ NUEVO CÁLCULO INTELIGENTE ▼▼▼
+    def capacidad_maxima_tubos(self):
+        # El freezer suma la capacidad máxima exacta de cada rack que tiene adentro
+        return sum(rack.capacidad_maxima() for rack in self.racks.all())
+
+    def posiciones_ocupadas(self):
+        from .models import PosicionTubo
+        return PosicionTubo.objects.filter(caja__rack__freezer=self, muestra__isnull=False).count()
+
+    def porcentaje_ocupacion(self):
+        capacidad = self.capacidad_maxima_tubos()
+        if capacidad <= 0:
+            return 0
+        porcentaje = (self.posiciones_ocupadas() / capacidad) * 100
+        return min(int(porcentaje), 100)
+
 class Rack(models.Model):
     freezer = models.ForeignKey(Freezer, on_delete=models.CASCADE, related_name="racks", verbose_name=_("Freezer Asignado"))    
     nombre = models.CharField(max_length=50, help_text="Ej: Rack A1")
-    filas_alto = models.IntegerField(help_text="Cantidad de cajas hacia arriba (ej: 5)")
-    columnas_ancho = models.IntegerField(help_text="Cantidad de cajas hacia el lado (ej: 5)")
+    filas_alto = models.IntegerField(help_text="Cantidad de cajas hacia arriba (ej: 5, 7)")
+    columnas_ancho = models.IntegerField(help_text="Cantidad de cajas hacia el lado (ej: 5, 4)")
+    
+    # Nuevo campo para los racks variables (4x4 o 5x5)
+    tubos_por_caja_estandar = models.IntegerField(
+        default=100, 
+        help_text="100 para criocajas 10x10, 81 para criocajas 9x9"
+    )
+
+    # ▼▼▼ TU REGLA DE ORO FÍSICA ▼▼▼
+    def capacidad_maxima(self):
+        if self.filas_alto == 7 and self.columnas_ancho == 5:
+            # Regla estricta: 7x5 SIEMPRE usa cajas 10x10 (100 posiciones)
+            return 7 * 5 * 100
+        else:
+            # Para 4x4 o 5x5, usa la configuración asignada a este rack específico
+            return self.filas_alto * self.columnas_ancho * self.tubos_por_caja_estandar
 
     def __str__(self):
         return f"{self.nombre} ({self.columnas_ancho}x{self.filas_alto}) - {self.freezer.nombre}"
@@ -94,6 +125,14 @@ class RegistroIngreso(models.Model):
     def __str__(self):
         return f"{self.codigo_lote} (Ref: {self.registro_interno})"
 
+class TipoMaterial(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    def __str__(self): return self.nombre
+
+class TipoVial(models.Model):
+    nombre = models.CharField(max_length=100, unique=True)
+    def __str__(self): return self.nombre
+
 class MuestraBiologica(models.Model):
     bsi_id = models.CharField(max_length=50, primary_key=True, unique=True)
     sample_id = models.CharField(max_length=50)
@@ -105,8 +144,8 @@ class MuestraBiologica(models.Model):
     subject_id = models.CharField(max_length=100, null=True, blank=True, help_text="ID anonimizado del paciente/participante")
     parent_id = models.CharField(max_length=50, null=True, blank=True, help_text="BSI ID de la muestra original (si es alícuota)")
 
-    material_type = models.CharField(max_length=50, help_text="Ej: Filtro pasivo, Suero")
-    vial_type = models.CharField(max_length=50)
+    material_type = models.ForeignKey(TipoMaterial, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Tipo de Material")
+    vial_type = models.ForeignKey(TipoVial, on_delete=models.PROTECT, null=True, blank=True, verbose_name="Tipo de Vial")
     vial_status = models.CharField(max_length=50, default="Disponible")
     
     volume = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, help_text="Volumen de la muestra (ej: 500.000)")
@@ -122,7 +161,7 @@ class MuestraBiologica(models.Model):
     
     entry_batch = models.ForeignKey(
         'RegistroIngreso', 
-        on_delete=models.PROTECT, 
+        on_delete=models.CASCADE, 
         verbose_name=_("Lote de Ingreso"), 
         null=True, 
         blank=True
