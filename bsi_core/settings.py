@@ -1,6 +1,18 @@
 import os
 from pathlib import Path
 import environ
+
+# Inicializamos la variable 'env' ANTES de usarla
+env = environ.Env(
+    DEBUG=(bool, False)
+)
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Leemos el archivo oculto
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+
 """
 Django settings for bsi_core project.
 
@@ -13,20 +25,14 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-from pathlib import Path
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = .env('django-insecure-@3*#+nc@u7(1ssby4!298pyx)(gwaf-@i*9q7xz%h2-@qwb6m1')
+SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = .env('True')
+DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = []
 
@@ -131,13 +137,3 @@ LOGIN_URL = '/cuentas/login/'          # <-- ¡Esta es la línea que soluciona e
 LOGIN_REDIRECT_URL = 'dashboard'       # A dónde ir al ingresar exitosamente
 LOGOUT_REDIRECT_URL = '/cuentas/login/' # A dónde ir al cerrar sesión
 
-# Inicializamos environ
-env = environ.Env(
-    # Seteamos valores por defecto por si el archivo .env no existe
-    DEBUG=(bool, False)
-)
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Le decimos a Django dónde está el archivo .env
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
