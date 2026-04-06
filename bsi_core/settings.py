@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+import environ
 """
 Django settings for bsi_core project.
 
@@ -20,10 +23,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-@3*#+nc@u7(1ssby4!298pyx)(gwaf-@i*9q7xz%h2-@qwb6m1'
+SECRET_KEY = .env('django-insecure-@3*#+nc@u7(1ssby4!298pyx)(gwaf-@i*9q7xz%h2-@qwb6m1')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = .env('True')
 
 ALLOWED_HOSTS = []
 
@@ -98,7 +101,13 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
+# Algoritmos de encriptación de contraseñas (Bcrypt como prioridad 1)
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -121,3 +130,14 @@ STATIC_URL = 'static/'
 LOGIN_URL = '/cuentas/login/'          # <-- ¡Esta es la línea que soluciona el problema!
 LOGIN_REDIRECT_URL = 'dashboard'       # A dónde ir al ingresar exitosamente
 LOGOUT_REDIRECT_URL = '/cuentas/login/' # A dónde ir al cerrar sesión
+
+# Inicializamos environ
+env = environ.Env(
+    # Seteamos valores por defecto por si el archivo .env no existe
+    DEBUG=(bool, False)
+)
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Le decimos a Django dónde está el archivo .env
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
