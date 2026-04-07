@@ -20,7 +20,7 @@
             <span class="text-light me-3 small">👤 {{ user.username }}</span>
             
             {% if user.is_superuser %}
-                <a href="/admin/" class="btn btn-outline-light btn-sm me-2">Ir al Panel Admin</a>
+                <a href="{% url 'admin:index' %}" class="btn btn-outline-light btn-sm me-2">Ir al Panel Admin</a>
             {% endif %}
             
             <form action="{% url 'logout' %}" method="post" class="m-0">
