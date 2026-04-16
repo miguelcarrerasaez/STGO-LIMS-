@@ -157,11 +157,20 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
 
                             caja_key = f"{rack.id}-{nombre_caja}"
                             if caja_key not in caja_cache:
-                                caja_cache[caja_key] = Caja.objects.create(
+                                nueva_caja = Caja.objects.create(
                                     nombre=nombre_caja, rack=rack,
                                     posicion_fila_en_rack=1, posicion_columna_en_rack=1, 
                                     filas_de_caja=10, columnas_de_caja=10 
                                 )
+                                caja_cache[caja_key] = nueva_caja
+                                
+                                # --- EL PARCHE ---
+                                # Actualizamos la memoria RAM con los 100 huecos de esta nueva caja
+                                nuevas_posiciones = PosicionTubo.objects.filter(caja=nueva_caja)
+                                for p in nuevas_posiciones:
+                                    pos_key_nuevo = f"{nueva_caja.id}-{p.row}-{p.col}"
+                                    posiciones_cache[pos_key_nuevo] = p
+
                             caja = caja_cache[caja_key]
 
                             pos_key = f"{caja.id}-{fila_lims}-{col_lims}"
@@ -246,7 +255,7 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
         )
         return render(request, "admin/inventario/importar_csv.html", context)
     
-    
+
     
 # Configuración visual para las Posiciones (¡La más importante!)
 @admin.register(PosicionTubo)
