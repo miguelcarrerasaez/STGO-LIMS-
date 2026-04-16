@@ -91,37 +91,37 @@
 
 // Cuando la cámara detecta un QR con éxito
   function onScanSuccess(textoEscaneado, decodedResult) {
-      // 1. Escribimos el texto original y completo en el campo (ej: bsi_id)
+      // 1. Llenamos el campo original donde se presionó el botón (ej: BSI ID)
       document.getElementById(inputDestino).value = textoEscaneado;
       
-      // ================================================================
-      // 2. AUTO-DESGLOSE INTELIGENTE (BSI ID -> Sample ID + Sequence)
-      // ================================================================
-      // Verificamos si el texto escaneado contiene al menos un espacio
-      if (textoEscaneado.includes(' ')) {
-          // Cortamos el texto usando los espacios como tijera
-          let partes = textoEscaneado.trim().split(/\s+/);
+      // 2. AUTO-DESGLOSE (Sample ID y Sequence)
+      // Limpiamos espacios al inicio/final por si la cámara lee algo extra
+      let textoLimpio = textoEscaneado.trim();
+      
+      // Verificamos si tiene algún tipo de espacio en el medio
+      if (textoLimpio.includes(' ')) {
+          
+          // Dividimos el texto usando CUALQUIER tipo de espacio o tabulación
+          let partes = textoLimpio.split(/\s+/);
           
           if (partes.length >= 2) {
-              let sampleDetectado = partes[0]; // Ej: "MAU11111"
-              let sequenceDetectado = partes[1]; // Ej: "1111"
+              // Django SIEMPRE genera los inputs con el prefijo "id_" 
+              let campoSample = document.getElementById('id_sample_id');
+              let campoSequence = document.getElementById('id_sequence');
               
-              // Buscamos si los campos 'sample_id' y 'sequence' existen en este formulario
-              let campoSample = document.querySelector('input[name="sample_id"]');
-              let campoSequence = document.querySelector('input[name="sequence"]');
-              
-              // Si los campos están en la pantalla, les inyectamos el valor automáticamente
+              // Inyectamos el primer fragmento (Ej: MAU11111)
               if (campoSample) {
-                  campoSample.value = sampleDetectado;
+                  campoSample.value = partes[0];
               }
+              
+              // Inyectamos el segundo fragmento (Ej: 1111)
               if (campoSequence) {
-                  campoSequence.value = sequenceDetectado;
+                  campoSequence.value = partes[1];
               }
           }
       }
-      // ================================================================
       
-      // 3. Apagamos la cámara para ahorrar batería
+      // 3. Apagamos la cámara
       html5QrcodeScanner.clear();
       
       // 4. Cerramos la ventana modal
@@ -130,6 +130,7 @@
       modal.hide();
   }
 
+  
   function onScanFailure(error) {
       // Mientras busca enfocar, tira errores internos que ignoramos
   }
