@@ -11,7 +11,7 @@
 
 <nav class="navbar navbar-dark bg-dark mb-4">
     <div class="container">
-        <span class="navbar-brand mb-0 h1">🔬 Sistema LIMS - Biobanco</span>
+        <span class="navbar-brand mb-0 h1">🧪 Sistema LIMS - Biobanco</span>
         
         <div class="d-flex align-items-center">
             <span class="text-light me-3 small">👤 {{ user.username }}</span>
@@ -37,21 +37,33 @@
                     <h5 class="mb-0">Registrar Nueva Muestra Biológica</h5>
                 </div>
                 <div class="card-body">
-    <div class="d-flex justify-content-end mb-3 border-bottom pb-3 bg-light p-2 rounded">
+                    <div class="d-flex justify-content-end mb-3 border-bottom pb-3 bg-light p-2 rounded">
                         <span class="text-muted me-auto mt-2 small"></span>
                         <a href="{% url 'crear_lote' %}" class="btn btn-outline-secondary btn-sm me-2">
                             📦 Crear Nuevo Lote
                         </a>
                         <a href="{% url 'crear_caja' %}" class="btn btn-outline-info btn-sm">
-                            🧊 Crear Nueva Caja
+                            🗃️ Crear Nueva Caja
                         </a>
                     </div>                
                     <form method="POST">
-                        {% csrf_token %} <div class="row">
+                        {% csrf_token %} 
+                        <div class="row">
                             {% for field in form %}
                             <div class="col-md-6 mb-3">
                                 <label class="form-label fw-bold">{{ field.label }}</label>
-                                {{ field }}
+                                
+                                {% if field.name == 'bsi_id' or field.name == 'sample_id' %}
+                                    <div class="input-group">
+                                        {{ field }}
+                                        <button class="btn btn-outline-primary" type="button" onclick="abrirEscaner('{{ field.id_for_label }}')">
+                                            📷 Escanear
+                                        </button>
+                                    </div>
+                                {% else %}
+                                    {{ field }}
+                                {% endif %}
+
                                 {% if field.errors %}
                                     <div class="text-danger small mt-1">{{ field.errors }}</div>
                                 {% endif %}
@@ -72,5 +84,66 @@
     </div>
 </div>
 
+<div class="modal fade" id="escanerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📷 Escanear Tubo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="reader" style="width: 100%; border-radius: 8px; overflow: hidden;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  let html5QrcodeScanner = null;
+  let inputDestino = null;
+
+  function abrirEscaner(idDelInput) {
+      inputDestino = idDelInput; 
+      
+      var myModal = new bootstrap.Modal(document.getElementById('escanerModal'));
+      myModal.show();
+
+      setTimeout(() => {
+          if(!html5QrcodeScanner) {
+              html5QrcodeScanner = new Html5QrcodeScanner(
+                  "reader", { fps: 10, qrbox: {width: 250, height: 250} }, false
+              );
+          }
+          html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+      }, 500);
+  }
+
+  function onScanSuccess(textoEscaneado, decodedResult) {
+      // 1. Escribimos el texto en el formulario
+      document.getElementById(inputDestino).value = textoEscaneado;
+      
+      // 2. Apagamos la cámara
+      html5QrcodeScanner.clear();
+      
+      // 3. Cerramos la ventana modal
+      var myModalEl = document.getElementById('escanerModal');
+      var modal = bootstrap.Modal.getInstance(myModalEl);
+      modal.hide();
+  }
+
+  function onScanFailure(error) {
+      // Ignorar errores de enfoque continuo
+  }
+  
+  // Apagar cámara si el usuario cierra la ventana con la 'X'
+  document.getElementById('escanerModal').addEventListener('hidden.bs.modal', function () {
+      if(html5QrcodeScanner){
+          html5QrcodeScanner.clear();
+      }
+  });
+</script>
 </body>
 </html>

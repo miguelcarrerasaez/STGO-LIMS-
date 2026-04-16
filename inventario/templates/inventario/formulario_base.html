@@ -50,5 +50,70 @@
     </div>
 </div>
 
+<div class="modal fade" id="escanerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📷 Escanear Tubo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="reader" style="width: 100%; border-radius: 8px; overflow: hidden;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+  let html5QrcodeScanner = null;
+  let inputDestino = null;
+
+  // Función que se llama al hacer clic en el botón de la cámara
+  function abrirEscaner(idDelInput) {
+      inputDestino = idDelInput; // Guardamos en qué cajita de texto vamos a escribir
+      
+      // Abrimos la ventana emergente
+      var myModal = new bootstrap.Modal(document.getElementById('escanerModal'));
+      myModal.show();
+
+      // Encendemos la cámara con un pequeño retraso para que la ventana termine de abrir
+      setTimeout(() => {
+          if(!html5QrcodeScanner) {
+              html5QrcodeScanner = new Html5QrcodeScanner(
+                  "reader", { fps: 10, qrbox: {width: 250, height: 250} }, false
+              );
+          }
+          html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+      }, 500);
+  }
+
+  // Cuando la cámara detecta un QR con éxito
+  function onScanSuccess(textoEscaneado, decodedResult) {
+      // 1. Escribimos el texto en el formulario
+      document.getElementById(inputDestino).value = textoEscaneado;
+      
+      // 2. Apagamos la cámara
+      html5QrcodeScanner.clear();
+      
+      // 3. Cerramos la ventana
+      var myModalEl = document.getElementById('escanerModal');
+      var modal = bootstrap.Modal.getInstance(myModalEl);
+      modal.hide();
+  }
+
+  function onScanFailure(error) {
+      // Mientras busca enfocar, tira errores internos que ignoramos
+  }
+  
+  // Seguridad: Si el usuario cierra la ventana con la "X", apagamos la cámara manualmente
+  document.getElementById('escanerModal').addEventListener('hidden.bs.modal', function () {
+      if(html5QrcodeScanner){
+          html5QrcodeScanner.clear();
+      }
+  });
+</script>
+
 </body>
 </html>
