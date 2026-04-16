@@ -5,6 +5,7 @@ from django.urls import path
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.db import transaction
+from django.utils import timezone
 from datetime import datetime
 from .models import Estudio, Freezer, Rack, Caja, MuestraBiologica, PosicionTubo, RegistroIngreso, TipoMaterial, TipoVial
 
@@ -41,7 +42,6 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
 # Asegúrate de agregar esta importación arriba de todo en tu admin.py:
 # from datetime import datetime
 
-    # 3. La función que lee el archivo y guarda todo en la base de datos
     def importar_csv(self, request):
         if request.method == "POST":
             csv_file = request.FILES.get("archivo_csv")
@@ -54,101 +54,84 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
                 decoded_file = csv_file.read().decode('utf-8-sig')
                 io_string = io.StringIO(decoded_file)
                 
-                # AUTO-DETECCIÓN: ¿Es un CSV (comas) o un TXT de BSI (tabulaciones)?
                 dialect = csv.Sniffer().sniff(io_string.read(1024))
                 io_string.seek(0)
                 reader = csv.DictReader(io_string, dialect=dialect) 
                 
-                muestras_creadas = 0
-                muestras_actualizadas = 0
                 errores_ubicacion = []
 
-                # transaction.atomic() asegura que si hay un error crítico, se deshace todo
                 with transaction.atomic():
-                    
                     # 1. CREAMOS EL LOTE DE MIGRACIÓN AUTOMÁTICO
-                    fecha_str = datetime.now().strftime('%Y%m%d-%H%M')
+                    fecha_str = timezone.now().strftime('%Y%m%d-%H%M')
                     lote_migracion = RegistroIngreso.objects.create(
                         codigo_lote=f"MIGRACION-BSI-{fecha_str}"
                     )
 
+                    # =========================================================
+                    # FASE DE CACHÉ EN MEMORIA (El secreto de la velocidad)
+                    # =========================================================
+                    materiales_cache = {m.nombre: m for m in TipoMaterial.objects.all()}
+                    viales_cache = {v.nombre: v for v in TipoVial.objects.all()}
+                    freezer_cache = {f.nombre: f for f in Freezer.objects.all()}
+                    rack_cache = {f"{r.freezer_id}-{r.nombre}": r for r in Rack.objects.all()}
+                    caja_cache = {f"{c.rack_id}-{c.nombre}": c for c in Caja.objects.all()}
+                    posiciones_cache = {f"{p.caja_id}-{p.row}-{p.col}": p for p in PosicionTubo.objects.all()}
+                    
+                    muestras_existentes = {m.bsi_id: m for m in MuestraBiologica.objects.all()}
+
+                    # Listas donde guardaremos los datos antes del gran viaje a la DB
+                    muestras_a_crear = []
+                    muestras_a_actualizar = []
+                    campos_a_actualizar = [
+                        'sample_id', 'project', 'subject_id', 'parent_id', 'material_type', 
+                        'vial_type', 'vial_status', 'volume', 'volume_unit', 'thaws', 
+                        'hemolyzed', 'vial_warnings', 'date_drawn', 'date_received', 
+                        'date_frozen', 'entry_batch', 'ubicacion'
+                    ]
+
                     for row in reader:
                         bsi_id = row.get('BSI ID', '').strip()
                         if not bsi_id: 
-                            continue # Saltamos filas vacías
+                            continue
 
-                        # --- PARSEO DE DATOS NUMÉRICOS Y BOOLEANOS ---
+                        # --- PARSEO BÁSICO ---
                         volumen_str = row.get('Volume', '').strip()
                         volumen = float(volumen_str) if volumen_str else None
-
                         thaws_str = row.get('Thaws', '').strip()
                         thaws = int(thaws_str) if thaws_str else 0
-
-                        # BSI a veces guarda 'Y' o 'Yes' para hemolizado
                         hemolizada = str(row.get('Hemolyzed', '')).strip().upper() in ['Y', 'YES', 'TRUE', '1']
 
-                        # --- PARSEO DE FECHAS (Limpiamos el .0 de los milisegundos de BSI) ---
                         def parse_bsi_date(date_str):
                             if not date_str: return None
                             try:
-                                clean_date = date_str.split('.')[0] # Quita el ".0" final
-                                return datetime.strptime(clean_date, '%Y-%m-%d %H:%M:%S')
+                                clean_date = date_str.split('.')[0]
+                                fecha_ingenua = datetime.strptime(clean_date, '%Y-%m-%d %H:%M:%S')
+                                # Arreglamos la advertencia de zona horaria de Django
+                                return timezone.make_aware(fecha_ingenua)
                             except ValueError:
                                 return None
 
-                        # --- PARSEO DE TABLAS MAESTRAS ---
+                        # --- LÓGICA DE TABLAS MAESTRAS (Usando la RAM, no la DB) ---
                         material_str = row.get('Material Type', '').strip()
+                        if material_str and material_str not in materiales_cache:
+                            materiales_cache[material_str] = TipoMaterial.objects.create(nombre=material_str)
+                        tipo_mat_obj = materiales_cache.get(material_str)
+
                         vial_str = row.get('Vial Type', '').strip()
-                        
-                        tipo_mat_obj = None
-                        if material_str:
-                            tipo_mat_obj, _ = TipoMaterial.objects.get_or_create(nombre=material_str)
-                            
-                        tipo_vial_obj = None
-                        if vial_str:
-                            tipo_vial_obj, _ = TipoVial.objects.get_or_create(nombre=vial_str)
+                        if vial_str and vial_str not in viales_cache:
+                            viales_cache[vial_str] = TipoVial.objects.create(nombre=vial_str)
+                        tipo_vial_obj = viales_cache.get(vial_str)
 
-                        # 2. CREAMOS O ACTUALIZAMOS LA MUESTRA
-                        muestra, created = MuestraBiologica.objects.update_or_create(
-                            bsi_id=bsi_id,
-                            defaults={
-                                'sample_id': row.get('Sample ID', '').strip(),
-                                'project': row.get('Project', '').strip(),
-                                'subject_id': row.get('Subject ID', '').strip(),
-                                'parent_id': row.get('Parent ID', '').strip(),
-                                
-                                # AQUÍ USAMOS LOS NUEVOS OBJETOS DE LAS TABLAS MAESTRAS
-                                'material_type': tipo_mat_obj,
-                                'vial_type': tipo_vial_obj,
-                                
-                                'vial_status': row.get('Vial Status', 'Disponible').strip(),
-                                'volume': volumen,
-                                'volume_unit': row.get('Volume Unit', '').strip(),
-                                'thaws': thaws,
-                                'hemolyzed': hemolizada,
-                                'vial_warnings': row.get('Vial Warnings', '').strip(),
-                                'date_drawn': parse_bsi_date(row.get('Date Drawn', '')),
-                                'date_received': parse_bsi_date(row.get('Date Received', '')),
-                                'date_frozen': parse_bsi_date(row.get('Date Frozen', '')),
-                                'entry_batch': lote_migracion, 
-                            }
-                        )
-
-                        if created: muestras_creadas += 1
-                        else: muestras_actualizadas += 1
-
-                        # 3. LÓGICA DE UBICACIÓN FÍSICA
+                        # --- LÓGICA DE UBICACIÓN (Usando la RAM, no la DB) ---
                         nombre_freezer = row.get('Freezer', '').strip()
                         nombre_rack = row.get('Rack', '').strip()
                         nombre_caja = row.get('Box', '').strip()
-                        
                         bsi_row = row.get('Row', '').strip()
                         bsi_col = row.get('Col', '').strip()
+                        
+                        ubicacion_final = None
 
                         if nombre_freezer and nombre_rack and nombre_caja and bsi_row and bsi_col:
-                            
-                            # --- EL DETECTOR INTELIGENTE ---
-                            # BSI cruza las coordenadas. Nuestro LIMS exige: 'row' = Letra, 'col' = Número
                             fila_lims = ""
                             col_lims = 0
                             
@@ -161,31 +144,92 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
                                     fila_lims = bsi_row.upper()
                             except ValueError:
                                 errores_ubicacion.append(f"{bsi_id} (Coordenadas corruptas en CSV)")
-                                continue
 
-                            freezer, _ = Freezer.objects.get_or_create(nombre=nombre_freezer)
-                            rack, _ = Rack.objects.get_or_create(nombre=nombre_rack, freezer=freezer, defaults={'filas_alto': 5, 'columnas_ancho': 5})
-                            caja, _ = Caja.objects.get_or_create(
-                                nombre=nombre_caja, rack=rack,
-                                defaults={
-                                    'posicion_fila_en_rack': 1, 'posicion_columna_en_rack': 1, 
-                                    'filas_de_caja': 10, 'columnas_de_caja': 10 
-                                }
-                            )
+                            # Navegación rápida por diccionarios en RAM
+                            if nombre_freezer not in freezer_cache:
+                                freezer_cache[nombre_freezer] = Freezer.objects.create(nombre=nombre_freezer)
+                            freezer = freezer_cache[nombre_freezer]
 
-                            try:
-                                # Buscamos el hueco usando la variable correcta para cada eje
-                                posicion = PosicionTubo.objects.get(caja=caja, row=fila_lims, col=col_lims)
-                                muestra.ubicacion = posicion
-                                muestra.save()
-                            except PosicionTubo.DoesNotExist:
-                                errores_ubicacion.append(f"{bsi_id} (Posición {fila_lims}{col_lims} no existe en caja de 10x10)")
+                            rack_key = f"{freezer.id}-{nombre_rack}"
+                            if rack_key not in rack_cache:
+                                rack_cache[rack_key] = Rack.objects.create(nombre=nombre_rack, freezer=freezer, filas_alto=5, columnas_ancho=5)
+                            rack = rack_cache[rack_key]
+
+                            caja_key = f"{rack.id}-{nombre_caja}"
+                            if caja_key not in caja_cache:
+                                caja_cache[caja_key] = Caja.objects.create(
+                                    nombre=nombre_caja, rack=rack,
+                                    posicion_fila_en_rack=1, posicion_columna_en_rack=1, 
+                                    filas_de_caja=10, columnas_de_caja=10 
+                                )
+                            caja = caja_cache[caja_key]
+
+                            pos_key = f"{caja.id}-{fila_lims}-{col_lims}"
+                            if pos_key in posiciones_cache:
+                                ubicacion_final = posiciones_cache[pos_key]
+                            else:
+                                errores_ubicacion.append(f"{bsi_id} (Posición {fila_lims}{col_lims} no existe en la caja)")
+
+                        # =========================================================
+                        # EMPAQUETADO DE MUESTRAS (Aún no guardamos nada)
+                        # =========================================================
+                        if bsi_id in muestras_existentes:
+                            m_obj = muestras_existentes[bsi_id]
+                            m_obj.sample_id = row.get('Sample ID', '').strip()
+                            m_obj.project = row.get('Project', '').strip()
+                            m_obj.subject_id = row.get('Subject ID', '').strip()
+                            m_obj.parent_id = row.get('Parent ID', '').strip()
+                            m_obj.material_type = tipo_mat_obj
+                            m_obj.vial_type = tipo_vial_obj
+                            m_obj.vial_status = row.get('Vial Status', 'Disponible').strip()
+                            m_obj.volume = volumen
+                            m_obj.volume_unit = row.get('Volume Unit', '').strip()
+                            m_obj.thaws = thaws
+                            m_obj.hemolyzed = hemolizada
+                            m_obj.vial_warnings = row.get('Vial Warnings', '').strip()
+                            m_obj.date_drawn = parse_bsi_date(row.get('Date Drawn', ''))
+                            m_obj.date_received = parse_bsi_date(row.get('Date Received', ''))
+                            m_obj.date_frozen = parse_bsi_date(row.get('Date Frozen', ''))
+                            m_obj.entry_batch = lote_migracion
+                            m_obj.ubicacion = ubicacion_final
                             
+                            muestras_a_actualizar.append(m_obj)
+                        else:
+                            nueva_muestra = MuestraBiologica(
+                                bsi_id=bsi_id,
+                                sample_id=row.get('Sample ID', '').strip(),
+                                project=row.get('Project', '').strip(),
+                                subject_id=row.get('Subject ID', '').strip(),
+                                parent_id=row.get('Parent ID', '').strip(),
+                                material_type=tipo_mat_obj,
+                                vial_type=tipo_vial_obj,
+                                vial_status=row.get('Vial Status', 'Disponible').strip(),
+                                volume=volumen,
+                                volume_unit=row.get('Volume Unit', '').strip(),
+                                thaws=thaws,
+                                hemolyzed=hemolizada,
+                                vial_warnings=row.get('Vial Warnings', '').strip(),
+                                date_drawn=parse_bsi_date(row.get('Date Drawn', '')),
+                                date_received=parse_bsi_date(row.get('Date Received', '')),
+                                date_frozen=parse_bsi_date(row.get('Date Frozen', '')),
+                                entry_batch=lote_migracion,
+                                ubicacion=ubicacion_final
+                            )
+                            muestras_a_crear.append(nueva_muestra)
+
+                    # =========================================================
+                    # EL IMPACTO MASIVO A LA BASE DE DATOS (1 Solo Viaje)
+                    # =========================================================
+                    if muestras_a_crear:
+                        MuestraBiologica.objects.bulk_create(muestras_a_crear, batch_size=500)
+                    if muestras_a_actualizar:
+                        MuestraBiologica.objects.bulk_update(muestras_a_actualizar, campos_a_actualizar, batch_size=500)
+
                 # 4. REPORTAMOS RESULTADOS AL USUARIO
-                mensaje_final = f"¡Éxito! {muestras_creadas} nuevas y {muestras_actualizadas} actualizadas. Asignadas al lote {lote_migracion.codigo_lote}."
+                mensaje_final = f"¡Migración Turbo Exitosa! {len(muestras_a_crear)} nuevas y {len(muestras_a_actualizar)} actualizadas. Lote: {lote_migracion.codigo_lote}."
                 
                 if errores_ubicacion:
-                    mensaje_final += f" ADVERTENCIA: {len(errores_ubicacion)} muestras no se pudieron ubicar en el mapa físico por coordenadas inválidas."
+                    mensaje_final += f" ADVERTENCIA: {len(errores_ubicacion)} muestras tienen coordenadas inválidas o cajas faltantes."
                     messages.warning(request, mensaje_final)
                 else:
                     messages.success(request, mensaje_final)
@@ -195,12 +239,15 @@ class MuestraBiologicaAdmin(admin.ModelAdmin):
             except Exception as e:
                 messages.error(request, f"Error crítico procesando el archivo: {str(e)}")
                 return redirect("..")
+                
         context = dict(
             self.admin_site.each_context(request),
             title="Importar Inventario desde BSI",
         )
-        return render(request, "admin/inventario/importar_csv.html", context)    
-
+        return render(request, "admin/inventario/importar_csv.html", context)
+    
+    
+    
 # Configuración visual para las Posiciones (¡La más importante!)
 @admin.register(PosicionTubo)
 class PosicionTuboAdmin(admin.ModelAdmin):
