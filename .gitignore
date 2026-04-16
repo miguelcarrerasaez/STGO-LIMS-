@@ -1,0 +1,13 @@
+# Variables de Entorno (¡LO MÁS IMPORTANTE!)
+.env
+
+# Base de datos local (Para no sobreescribir datos en internet)
+db.sqlite3
+
+# Entornos Virtuales
+venv/
+env/
+
+# Caché de Python (Archivos basura que no necesitamos subir)
+__pycache__/
+*.pyc
