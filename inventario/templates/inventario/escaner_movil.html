@@ -1,0 +1,46 @@
+{% extends 'inventario/formulario_base.html' %} 
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h2 class="mb-4">📷 Escáner Móvil de Muestras</h2>
+            <p class="text-muted">Apunta la cámara de tu celular al código QR del tubo.</p>
+            
+            <div id="reader" class="mx-auto" style="width: 100%; max-width: 500px; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 8px rgba(0,0,0,0.1);"></div>
+            
+            <div class="mt-4">
+                <a href="{% url 'dashboard' %}" class="btn btn-secondary">Volver al Inicio</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+    // Esta función se ejecuta instantáneamente cuando la cámara lee un QR
+    function onScanSuccess(decodedText, decodedResult) {
+        // Detenemos el escáner para que no lea 2 veces
+        html5QrcodeScanner.clear();
+        
+        // Redirigimos al sistema de búsqueda enviando el texto del QR (ej: el BSI ID)
+        // Esto buscará la muestra y abrirá su ficha para registrar salida o editar
+        window.location.href = "{% url 'buscar_muestra' %}?q=" + encodeURIComponent(decodedText);
+    }
+
+    function onScanFailure(error) {
+        // Ignoramos los errores mientras busca enfocar
+    }
+
+    // Configuramos la cámara: 10 frames por segundo y un cuadro de lectura
+    let html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader",
+        { fps: 10, qrbox: {width: 250, height: 250} },
+        /* verbose= */ false
+    );
+    
+    // Encendemos el motor
+    html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+</script>
+{% endblock %}

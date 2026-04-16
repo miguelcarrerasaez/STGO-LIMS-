@@ -348,3 +348,8 @@ def mover_muestra_ajax(request):
 
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+    
+@login_required
+def escaner_movil(request):
+    # Solo renderiza la página con la cámara
+    return render(request, 'inventario/escaner_movil.html')

@@ -20,7 +20,7 @@ urlpatterns = [
     path('nueva-caja/', views.crear_caja, name='crear_caja'),
     path('salida-muestra/', registrar_salida, name='registrar_salida'),
     path('buscar/', buscar_muestra, name='buscar_muestra'),
-
+    path('escaner/', views.escaner_movil, name='escaner_movil'),
     # --- RUTAS AJAX / API ---
     path('ajax/cargar-cajas/', views.cargar_cajas, name='ajax_cargar_cajas'),
     path('ajax/cargar-huecos/', views.cargar_huecos, name='ajax_cargar_huecos'),
