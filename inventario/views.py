@@ -392,3 +392,66 @@ def mover_muestra_ajax(request):
 def escaner_movil(request):
     # Solo renderiza la página con la cámara
     return render(request, 'inventario/escaner_movil.html')
+
+
+@login_required
+def exportar_busqueda_csv(request):
+    # 1. Leemos exactamente los mismos filtros que la pantalla de visualización
+    query = request.GET.get('q', '').strip()
+    material_id = request.GET.get('material', '')
+    proyecto = request.GET.get('proyecto', '').strip()
+    estudio_id = request.GET.get('estudio', '')
+
+    # 2. Buscamos las muestras con esos filtros
+    muestras = MuestraBiologica.objects.select_related(
+        'material_type', 'study', 'ubicacion__caja__rack__freezer'
+    ).all()
+
+    if query:
+        muestras = muestras.filter(
+            Q(bsi_id__icontains=query) | 
+            Q(sample_id__icontains=query) | 
+            Q(subject_id__icontains=query)
+        )
+    if material_id:
+        muestras = muestras.filter(material_type_id=material_id)
+    if proyecto:
+        muestras = muestras.filter(project__icontains=proyecto)
+    if estudio_id:
+        muestras = muestras.filter(study_id=estudio_id)
+
+    muestras = muestras.order_by('sample_id', 'sequence')
+
+    # 3. Configuramos el archivo para que se descargue
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="reporte_dinamico_lims.csv"'
+    response.write('\ufeff'.encode('utf8')) # Truco para que Excel lea los tildes
+    
+    writer = csv.writer(response, delimiter=';') # Usamos punto y coma para Excel latino
+    
+    # 4. Escribimos los encabezados de las columnas
+    writer.writerow(['BSI ID', 'Sample ID', 'Sequence', 'Material', 'Volumen', 'Unidad', 'Proyecto', 'Estudio', 'Ubicación Física', 'Estado'])
+
+    # 5. Llenamos el archivo fila por fila
+    for m in muestras:
+        ubicacion = ""
+        if m.ubicacion:
+            u = m.ubicacion
+            ubicacion = f"{u.caja.rack.freezer.nombre} > {u.caja.rack.nombre} > {u.caja.nombre} > {u.row}{u.col}"
+        else:
+            ubicacion = "Sin ubicación física"
+            
+        writer.writerow([
+            m.bsi_id,
+            m.sample_id,
+            m.sequence,
+            m.material_type.nombre if m.material_type else "N/A",
+            m.volume,
+            m.volume_unit,
+            m.project,
+            m.study.nombre_estudio if m.study else "N/A",
+            ubicacion,
+            m.vial_status
+        ])
+        
+    return response

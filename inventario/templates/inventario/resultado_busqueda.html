@@ -64,8 +64,15 @@
         <div class="col-md-9">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h4 class="mb-0">📊 Resultados del Reporte</h4>
-                <span class="badge bg-primary fs-6">{{ total_resultados }} muestras encontradas</span>
-            </div>
+                
+                <div>
+                    <span class="badge bg-primary fs-6 me-2">{{ total_resultados }} muestras encontradas</span>
+                    
+                    <a href="{% url 'exportar_busqueda_csv' %}?{{ request.GET.urlencode }}" class="btn btn-success">
+                        💾 Exportar esta vista a CSV
+                    </a>
+                </div>
+                </div>
 
             <div class="card shadow-sm">
                 <div class="card-body p-0 table-responsive">
