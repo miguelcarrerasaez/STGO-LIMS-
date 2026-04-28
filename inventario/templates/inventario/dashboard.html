@@ -12,9 +12,14 @@
     <div class="container">
         <span class="navbar-brand mb-0 h1">🔬 Sistema LIMS - Biobanco</span>
         
-        <form class="d-flex mx-auto" style="max-width: 400px; width: 100%;" action="{% url 'buscar_muestra' %}" method="GET">
-            <input class="form-control me-2" type="search" name="q" placeholder="Buscar por BSI ID o Sample ID..." aria-label="Search" required>
-            <button class="btn btn-outline-info" type="submit">🔍</button>
+        <form id="form_busqueda" class="d-flex mx-auto" style="max-width: 500px; width: 100%;" action="{% url 'buscar_muestra' %}" method="GET">
+            <div class="input-group">
+                <input id="buscador_dashboard" class="form-control" type="search" name="q" placeholder="Buscar por BSI ID o Sample ID..." aria-label="Search" required>
+                <button class="btn btn-outline-light" type="button" onclick="abrirEscaner('buscador_dashboard')" title="Escanear QR">
+                    📷
+                </button>
+                <button class="btn btn-info text-white" type="submit">🔍</button>
+            </div>
         </form>
         
         <div class="d-flex align-items-center">
@@ -32,6 +37,7 @@
     </div>
 </nav>
 
+<div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="mb-0">Resumen de Inventario</h2>
         
@@ -154,5 +160,78 @@
     </div>
 </div>
 
+<div class="modal fade" id="escanerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">📷 Escanear para Buscar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="reader" style="width: 100%; border-radius: 8px; overflow: hidden;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+  let html5QrcodeScanner = null;
+  let inputDestino = null;
+
+  function abrirEscaner(idDelInput) {
+      inputDestino = idDelInput; 
+      
+      var myModal = new bootstrap.Modal(document.getElementById('escanerModal'));
+      myModal.show();
+
+      setTimeout(() => {
+          if(!html5QrcodeScanner) {
+              html5QrcodeScanner = new Html5QrcodeScanner(
+                  "reader", { fps: 10, qrbox: {width: 250, height: 250} }, false
+              );
+          }
+          html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+      }, 500);
+  }
+
+  function onScanSuccess(textoEscaneado, decodedResult) {
+      // 1. Limpiamos posibles espacios basura
+      let textoLimpio = textoEscaneado.trim();
+
+      // Si el escáner trae el "Sample ID + Sequence" (ej: MAU11111 1111),
+      // nos quedamos solo con la primera parte para que la búsqueda traiga el tubo y sus alícuotas
+      if (textoLimpio.includes(' ')) {
+          textoLimpio = textoLimpio.split(/\s+/)[0]; 
+      }
+
+      // 2. Escribimos el texto en la barra de búsqueda
+      document.getElementById(inputDestino).value = textoLimpio;
+      
+      // 3. Apagamos la cámara
+      html5QrcodeScanner.clear();
+      
+      // 4. Cerramos la ventana modal
+      var myModalEl = document.getElementById('escanerModal');
+      var modal = bootstrap.Modal.getInstance(myModalEl);
+      modal.hide();
+
+      // 5. ¡MAGIA! Hacemos clic en "Buscar" automáticamente
+      document.getElementById('form_busqueda').submit();
+  }
+
+  function onScanFailure(error) {
+      // Ignorar errores mientras enfoca
+  }
+  
+  // Apagar cámara si cierran la ventana con la 'X'
+  document.getElementById('escanerModal').addEventListener('hidden.bs.modal', function () {
+      if(html5QrcodeScanner){
+          html5QrcodeScanner.clear();
+      }
+  });
+</script>
 </body>
 </html>
