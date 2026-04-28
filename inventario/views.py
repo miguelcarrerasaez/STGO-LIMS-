@@ -4,10 +4,10 @@ from django.http import HttpResponse
 from django.contrib.auth.decorators import login_required # 1. Importamos el "guardia de seguridad"
 from django.contrib.admin.views.decorators import staff_member_required
 import csv
-from .models import MuestraBiologica, Rack, Caja, RegistroIngreso, Freezer, PosicionTubo, MovimientoMuestra
+from django.db.models import Q
+from .models import MuestraBiologica, TipoMaterial, Estudio, Rack, Caja, RegistroIngreso, Freezer, PosicionTubo, MovimientoMuestra
 from .forms import MuestraBiologicaForm, RegistroIngresoForm, CajaForm, SalidaMuestraForm, ExportarCSVForm
 from django.contrib import messages
-from django.db.models import Q
 import json
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
@@ -282,21 +282,60 @@ def registrar_salida(request):
 
 @login_required
 def buscar_muestra(request):
-    # Obtenemos lo que el usuario escribió en la barra de búsqueda
+    # 1. Capturamos todos los filtros que vengan en la URL
     query = request.GET.get('q', '').strip()
-    resultados = []
+    material_id = request.GET.get('material', '')
+    proyecto = request.GET.get('proyecto', '').strip()
+    estudio_id = request.GET.get('estudio', '')
 
+    # 2. Partimos con TODAS las muestras (Usamos select_related para que la base de datos vuele)
+    muestras = MuestraBiologica.objects.select_related(
+        'material_type', 'vial_type', 'ubicacion__caja__rack__freezer'
+    ).all()
+
+    # 3. Aplicamos los filtros uno por uno como si fueran coladores
     if query:
-        # Buscamos coincidencias en BSI ID o en Sample ID
-        # select_related hace que la base de datos traiga toda la ruta física súper rápido
-        resultados = MuestraBiologica.objects.filter(
-            Q(bsi_id__icontains=query) | Q(sample_id__icontains=query)
-        ).select_related('ubicacion__caja__rack__freezer')
+        # Busca si el texto coincide parcial o totalmente con BSI ID, Sample ID o Subject ID
+        muestras = muestras.filter(
+            Q(bsi_id__icontains=query) | 
+            Q(sample_id__icontains=query) | 
+            Q(subject_id__icontains=query)
+        )
+    
+    if material_id:
+        muestras = muestras.filter(material_type_id=material_id)
+        
+    if proyecto:
+        muestras = muestras.filter(project__icontains=proyecto)
+        
+    if estudio_id:
+        muestras = muestras.filter(study_id=estudio_id)
 
-    return render(request, 'inventario/resultado_busqueda.html', {
+    # Ordenamos los resultados (ej: por Sample ID y luego por secuencia)
+    muestras = muestras.order_by('sample_id', 'sequence')
+
+    # 4. Preparamos las opciones para rellenar las cajitas de filtro en la pantalla
+    materiales = TipoMaterial.objects.all().order_by('nombre')
+    estudios = Estudio.objects.all().order_by('nombre_estudio')
+    
+    # Extraemos una lista de proyectos únicos que ya existen en la base de datos
+    proyectos_unicos = MuestraBiologica.objects.values_list('project', flat=True)\
+                        .exclude(project__isnull=True).exclude(project__exact='')\
+                        .distinct().order_by('project')
+
+    context = {
+        'muestras': muestras,
         'query': query,
-        'resultados': resultados
-    })
+        'material_id': material_id,
+        'proyecto_sel': proyecto,
+        'estudio_id': estudio_id,
+        'materiales': materiales,
+        'estudios': estudios,
+        'proyectos_unicos': proyectos_unicos,
+        'total_resultados': muestras.count(),
+    }
+    
+    return render(request, 'inventario/resultado_busqueda.html', context)
 
 @login_required
 @require_POST
